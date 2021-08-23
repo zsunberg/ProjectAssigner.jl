@@ -1,0 +1,3 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+ProjectAssigner = "40c276f3-910b-46f6-a8e5-80a1b18107b2"
