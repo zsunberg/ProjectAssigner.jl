@@ -1,6 +1,6 @@
-using ProjectAssigner
+using ProjectAssigner: match
 using Test
 
 @testset "ProjectAssigner.jl" begin
-    # Write your tests here.
+    match(students="students.csv", projects="projects.csv")
 end
