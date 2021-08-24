@@ -2,6 +2,7 @@ module ProjectAssigner
 
 using CSV
 using DataFrames
+using GLPK
 
 mutable struct Group
     members::Set{String}
@@ -9,8 +10,55 @@ mutable struct Group
     preferences::Vector{String}
 end
 
+struct IndexModel
+    c::Matrix{Float64}            # c[i, j] is the cost for assigning group i to project j
+    r::Matrix{Float64}            # r[k, i] is the amount of skill k that group i contributes
+    s::Vector{Float64}            # s[i] is the size of group i
+    minskills::Matrix{Float64}    # minskills[k, j] is the minimum number of people needed for skill k on project j
+    minsizes::Vector{Float64}     # minimum sizes for each project
+    maxsizes::Vector{Float64}     # maximum sizes for each project
+    force::Vector{Pair{Int, Int}} # i => j means we are forcing group i to be assigned to project j
+end
+
+function IndexModel(groups::Vector{Group}, projects::DataFrame; force=[])
+    skills = map(n->n[findfirst(':', n)+1:end], filter(n->startswith(n, "skill:"), names(projects)))
+    skillinds = Dict(n=>k for (k, n) in enumerate(skills))
+    pinds = Dict(p=>j for (j, p) in enumerate(projects[!, :name]))
+
+    c = calculate_costs(groups, pinds)
+
+    r = zeros(length(skillinds), length(groups))
+    for (i, g) in enumerate(groups)
+        for skill in keys(g.skills)
+            r[skillinds[skill], i] = g.skills[skill]
+        end
+    end
+
+    minskills = zeros(length(skillinds), length(pmap))
+    minsizes = zeros(nrow(projects))
+    maxsizes = zeros(nrow(projects))
+    for (j, row) in rows(projects)
+        minsizes[j] = row[:min]
+        maxsizes[j] = row[:max]
+        for skill in keys(skillinds)
+            minskills[skillinds[skill], j] = row["skill:"*skill]
+        end
+    end
+
+    # map from student name to group index
+    ginds = Dict(Iterators.flatten((m=>i for m in groups[i].members) for i in 1:length(groups)))
+    force_indices = map(force) do pair
+        ginds[first(pair)] => pinds[last(pair)]
+    end
+
+    return IndexModel(c, r, s, minskills, minsizes, maxsizes, force_indices)
+end
+
 function match(;students, projects,
-                output=nothing)
+                output=nothing,
+                force::AbstractVector{<:Pair}=[],
+                optimizer=GLPK.Optimizer
+    )
 
     students = as_dataframe(students)
     projects = as_dataframe(projects)
@@ -21,14 +69,14 @@ function match(;students, projects,
 
     @debug(groups)
 
-    assignments = match_groups(groups, projects)
+    assignments = match_groups(groups, projects, force=force, optimizer=optimizer)
 
     out = DataFrame()
-    for (g, group) in enumerate(groups)
-        project = assignments[g]
-        pref = findfirst(project, group.preferences)
+    for (i, g) in enumerate(groups)
+        project = assignments[i]
+        pref = findfirst(project, g.preferences)
         for name in group.members
-            push!(out, (name=name, project=assignments[g], preference=pref))
+            push!(out, (name=name, project=assignments[i], preference=pref))
         end
     end
 
@@ -40,39 +88,24 @@ function match(;students, projects,
     return out
 end
 
-struct IndexModel
-    c::Matrix{Float64}            # c[i, j] is the cost for assigning group i to project j
-    r::Matrix{Float64}            # r[k, i] is the amount of skill k that group i contributes
-    s::Vector{Float64}            # s[i] is the size of group i
-    minroles::Matrix{Float64}     # minroles[k, j] is the minimum number of people needed for role k on project j
-    minsizes::Vector{Float64}     # minimum sizes for each project
-    maxsizes::Vector{Float64}     # maximum sizes for each project
-    force::Vector{Pair{Int, Int}} # i => j means we are forcing group i to be assigned to project j
-end
+function match_groups(groups, projects; force=[], optimizer=GLPK.Optimizer)
+    m = IndexModel(groups, projects, force)
 
-function IndexModel(groups, projects; force=[])
-    c = calculate_costs(students, projects, groups)
-    r, pm, s = calculate_role_fractions(students, projects, groups)
-    roles = collect_roles(projects)
-    minroles = zeros(length(roles), length(projects))
-    for (k, role) in enumerate(roles)
-        for (j, p) in enumerate(projects)
-            minroles[k, j] = get(p.minroles, role, 0.0)
-        end
+    opt = create_jump_model(m)
+    set_optimizer(opt, optimizer)
+    optimize!(opt)
+
+    if termination_status(opt) != MOI.OPTIMAL
+        @show termination_status(opt)
     end
-    minsizes = [p.minsize for p in projects]
-    maxsizes = [p.maxsize for p in projects]
-
-    ginds = group_index_map(students, groups)
-    pinds = Dict(p.id => j for (j,p) in enumerate(projects))
-    force_indices = map(force) do pair
-        ginds[first(pair)] => pinds[last(pair)]
+    assignments = String[]
+    x_opt = value.(opt[:x])
+    for i in 1:length(groups)
+        j = only(findall(x_opt[i,:]))
+        push!(assignments, projects[j, :name])
     end
-
-    return IndexModel(c, r, pm, s, minroles, minsizes, maxsizes, force_indices)
+    return assignments
 end
-
-
 
 as_dataframe(fname::AbstractString) = DataFrame(CSV.File(fname))
 as_dataframe(df::DataFrame) = df
@@ -150,6 +183,65 @@ function group(students::DataFrame)
     return groups
 end
 
+function create_jump_model(m::IndexModel)
+    n_groups, n_projects = size(m.c)
 
+    opt = Model()
+
+    # x[i, j] = 1 indicates that group i is in project j
+    @variable(opt, x[1:n_groups, 1:n_projects], Bin)
+
+    @objective(opt, Min, sum(m.c.*x))
+
+    for i in 1:n_groups
+        @constraint(opt, sum(x[i, :]) == 1)
+    end
+
+    for j in 1:n_projects
+        # roles
+        pr = m.r*x[:, j]
+        @constraint(opt, pr .>= m.minroles[:, j])
+        # sizes
+        ps = m.s'*x[:, j]
+        @constraint(opt, m.minsizes[j] <= ps <= m.maxsizes[j])
+    end
+
+    for pair in m.force
+        @constraint(opt, x[pair...] == 1)
+    end
+
+    return opt
+end
+
+function calculate_costs(groups, pinds)
+    # number of students
+    n = sum(length(g.members) for g in groups)
+
+    # number of projects
+    m = length(pinds)
+
+    # constant for calculating costs
+    logn = ceil(Int, log2(n))
+
+    # c[i, j] is the cost of connecting group i to project j
+    c = zeros(length(groups), m)
+
+    for (i, g) in enumerate(groups)
+        # fill in preferenced
+        for (r, p) in enumerate(g.preferences)
+            c[i, pinds[p]] = 2.0^(logn*(r-div(m,2)))*length(g.members)
+        end
+
+        # fill in unpreferenced
+        if length(g.preferences) < length(pinds)
+            r = length(g.preferences)+1
+            missing_cost = 2.0^(logn*(r-div(m,2)))*length(g.members)
+            row = view(c, ginds[sd.id], :)
+            row[row.==0.0] .= missing_cost
+        end
+    end
+
+    return c
+end
 
 end
