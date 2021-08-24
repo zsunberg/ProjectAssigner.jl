@@ -3,6 +3,7 @@ module ProjectAssigner
 using CSV
 using DataFrames
 using GLPK
+using JuMP
 
 mutable struct Group
     members::Set{String}
@@ -34,10 +35,12 @@ function IndexModel(groups::Vector{Group}, projects::DataFrame; force=[])
         end
     end
 
-    minskills = zeros(length(skillinds), length(pmap))
+    s = [length(g.members) for g in groups]
+
+    minskills = zeros(length(skillinds), length(pinds))
     minsizes = zeros(nrow(projects))
     maxsizes = zeros(nrow(projects))
-    for (j, row) in rows(projects)
+    for (j, row) in enumerate(Tables.rows(projects))
         minsizes[j] = row[:min]
         maxsizes[j] = row[:max]
         for skill in keys(skillinds)
@@ -56,7 +59,7 @@ end
 
 function match(;students, projects,
                 output=nothing,
-                force::AbstractVector{<:Pair}=[],
+                force::AbstractVector{Pair{String,String}}=Pair{String,String}[],
                 optimizer=GLPK.Optimizer
     )
 
@@ -71,14 +74,15 @@ function match(;students, projects,
 
     assignments = match_groups(groups, projects, force=force, optimizer=optimizer)
 
-    out = DataFrame()
+    out = DataFrame(name=String[], project=String[], preference=Union{Int,Missing}[])
     for (i, g) in enumerate(groups)
         project = assignments[i]
-        pref = findfirst(project, g.preferences)
-        for name in group.members
+        pref = something(findfirst(==(project), g.preferences), missing)
+        for name in g.members
             push!(out, (name=name, project=assignments[i], preference=pref))
         end
     end
+    @info("Assignments:", out)
 
     if !isnothing(output)
         @info("Writing to $output.")
@@ -89,19 +93,19 @@ function match(;students, projects,
 end
 
 function match_groups(groups, projects; force=[], optimizer=GLPK.Optimizer)
-    m = IndexModel(groups, projects, force)
+    m = IndexModel(groups, projects, force=force)
 
     opt = create_jump_model(m)
     set_optimizer(opt, optimizer)
     optimize!(opt)
 
     if termination_status(opt) != MOI.OPTIMAL
-        @show termination_status(opt)
+        @error termination_status(opt)
     end
     assignments = String[]
     x_opt = value.(opt[:x])
     for i in 1:length(groups)
-        j = only(findall(x_opt[i,:]))
+        j = only(findall(x_opt[i,:] .> 0))
         push!(assignments, projects[j, :name])
     end
     return assignments
@@ -198,9 +202,9 @@ function create_jump_model(m::IndexModel)
     end
 
     for j in 1:n_projects
-        # roles
+        # skills
         pr = m.r*x[:, j]
-        @constraint(opt, pr .>= m.minroles[:, j])
+        @constraint(opt, pr .>= m.minskills[:, j])
         # sizes
         ps = m.s'*x[:, j]
         @constraint(opt, m.minsizes[j] <= ps <= m.maxsizes[j])
@@ -236,7 +240,7 @@ function calculate_costs(groups, pinds)
         if length(g.preferences) < length(pinds)
             r = length(g.preferences)+1
             missing_cost = 2.0^(logn*(r-div(m,2)))*length(g.members)
-            row = view(c, ginds[sd.id], :)
+            row = view(c, i, :)
             row[row.==0.0] .= missing_cost
         end
     end
