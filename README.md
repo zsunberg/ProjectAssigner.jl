@@ -9,3 +9,5 @@ Tool for assigning students from a large class (e.g. Senior Design) to projects 
 Please see the documentation by clicking on the blue docs badge above for instructions and usage.
 
 More details about the approach can be found in our [ASEE conference paper](https://peer.asee.org/37187).
+
+This tool was originally developed for the senior design course in [Aerospace Engineering Sciences at the University of Colorado Boulder](https://www.colorado.edu/aerospace/people).
