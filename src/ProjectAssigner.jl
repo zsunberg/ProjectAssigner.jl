@@ -57,6 +57,12 @@ function IndexModel(groups::Vector{Group}, projects::DataFrame; force=[])
     return IndexModel(c, r, s, minskills, minsizes, maxsizes, force_indices)
 end
 
+"""
+    ProjectAssigner.match(;students, projects, [output], [force], [optimizer])
+
+!!! warning "Scaling Issues"
+    Due to the exponential costs in the objective, the optimization problem may be poorly-scaled for large classes. This can result in the default GLPK optimizer producing poor results even though it thinks that it has solved the problem. More powerful commercial solvers such as [Gurobi](https://github.com/jump-dev/Gurobi.jl) can handle this much better.
+"""
 function match(;students, projects,
                 output=nothing,
                 force::AbstractVector{Pair{String,String}}=Pair{String,String}[],
@@ -100,7 +106,7 @@ function match_groups(groups, projects; force=[], optimizer=GLPK.Optimizer)
     optimize!(opt)
 
     if termination_status(opt) != MOI.OPTIMAL
-        @error termination_status(opt)
+        @error(termination_status(opt))
     end
     assignments = String[]
     x_opt = value.(opt[:x])
