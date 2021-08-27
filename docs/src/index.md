@@ -6,6 +6,8 @@ CurrentModule = ProjectAssigner
 
 Documentation for [ProjectAssigner](https://github.com/zsunberg/ProjectAssigner.jl). More information about the approach can be found in our [ASEE Paper](https://peer.asee.org/fair-senior-capstone-project-teaming-based-on-skills-preferences-and-friend-groups).
 
+See the [examples](https://github.com/zsunberg/ProjectAssigner.jl/tree/main/examples) directory for example scripts in julia and python.
+
 ```@contents
 Pages=["index.md", "usage.md", "data.md"]
 ```
