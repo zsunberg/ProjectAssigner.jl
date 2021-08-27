@@ -89,6 +89,8 @@ function match(;students, projects,
     students = as_dataframe(students)
     projects = as_dataframe(projects)
 
+    lint_input(students, projects)
+
     @info("Found $(nrow(students)) students and $(nrow(projects)) projects.", students, projects)
 
     groups = group(students)
@@ -106,6 +108,12 @@ function match(;students, projects,
         end
     end
     @info("Assignments:", out)
+    histogram = DataFrame(preference=[], number=Int[])
+    for r in 1:maximum(skipmissing(out[!, :preference]))
+        push!(histogram, (preference=r, number=sum(skipmissing(out[!, :preference].==r))))
+    end
+    push!(histogram, (preference=missing, number=sum(ismissing, out[!, :preference])))
+    @info("Frequencies by preference rank:", histogram)
 
     if !isnothing(output)
         @info("Writing to $output.")
@@ -269,6 +277,64 @@ function calculate_costs(groups, pinds)
     end
 
     return c
+end
+
+function lint_input(students, projects)
+    # students table
+    if !("name" in names(students))
+        @error("Required column 'name' missing from students table.", names(students))
+    end
+
+    student_skills = Set{String}()
+    teammate_keys = String[]
+    project_names = Set{String}()
+    for n in names(students)
+        if startswith(n, "skill:")
+            push!(student_skills, n[findfirst(':', n)+1:end])
+        elseif startswith(n, "teammate_")
+            push!(teammate_keys, n)
+        elseif n != "name"
+            push!(project_names, n)
+        end
+    end
+
+    student_names = Set(students[!, :name])
+    for r in Tables.rows(students)
+        for t in teammate_keys
+            if !ismissing(r[t]) && !(r[t] in student_names)
+                @error("Teammate requrest not in list of student names.", request=r[t], requester=r[:name])
+            end
+        end
+    end
+
+    # projects table
+    for c in ["name", "min", "max"]
+        if !(c in names(projects))
+            @error("Required column '$c' missing from projects table.", names(projects))
+        end
+    end
+
+    for c in ["min", "max"]
+        if !(eltype(projects[!, c]) <: Integer)
+            @error("The type of column '$c' in the projects table was not Integer; instead it was $(eltype(projects[!,c])). Check for extraneous space or other characters.")
+        end
+    end
+
+    project_skills = Set{String}()
+    for n in names(projects)
+        if startswith(n, "skill:")
+            push!(project_skills, n[findfirst(':', n)+1:end])
+        end
+    end
+
+    # combination
+    if student_skills != project_skills
+        @error("Project and student skill columns do not match!", project_skills, student_skills)
+    end
+
+    if Set(projects[!,:name]) != project_names
+        @error("Project columns in students table and names in project table do not match.", projects[!,:name], project_names)
+    end
 end
 
 end
