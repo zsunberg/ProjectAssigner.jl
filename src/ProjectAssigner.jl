@@ -75,7 +75,7 @@ julia> ProjectAssigner.match(students="students.csv", projects="projects.csv")
 - `projects`: A `DataFrame` or csv filename `String` specifying information about the projects. See the Data Format section of the documentation for more information.
 - `output::String`: optional name for a csv file that the assignments will be written to.
 - `force`: optional vector of student-project pairs to force matches for, e.g. `force=["Bob"=>"Airplane"]` will force student Bob to be assigned to the Airplane project.
-- `optimizer`: A subtype of `MathOptInterface.AbstractOptimizer` to run the optimization, e.g. `optimizer=Gurobi.Optimizer` will use Gurobi instead of the default `GLPK`
+- `optimizer::Function`: optimizer factory to use for the optimization, e.g. `optimizer=Gurobi.Optimizer` will use Gurobi instead of the default `GLPK`
 
 !!! warning "Scaling Issues"
     Due to the exponential costs in the objective, the optimization problem may be poorly-scaled for large classes. This can result in the default GLPK optimizer producing poor results even though it thinks that it has solved the problem. More powerful commercial solvers such as [Gurobi](https://github.com/jump-dev/Gurobi.jl) can handle this much better.
@@ -125,6 +125,15 @@ end
 
 function match_groups(groups, projects; force=[], optimizer=GLPK.Optimizer)
     m = IndexModel(groups, projects, force=force)
+
+    if (maximum(m.c) + minimum(m.c)) == maximum(m.c) && optimizer == GLPK.Optimizer
+        @error("""This problem is too large for GLPK.
+
+               The cost coefficients have too large a range, and the solution will likely be suboptimal.
+
+               Recommend switching to the Gurobi optimizer with
+               ProjectAssigner.match(..., optimizer=Gurobi.Optimizer).""", extrema(m.c))
+    end
 
     opt = create_jump_model(m)
     set_optimizer(opt, optimizer)
