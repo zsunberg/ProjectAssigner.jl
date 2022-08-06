@@ -78,7 +78,7 @@ julia> ProjectAssigner.match(students="students.csv", projects="projects.csv")
 - `optimizer::Function`: optimizer factory to use for the optimization, e.g. `optimizer=Gurobi.Optimizer` will use Gurobi instead of the default `GLPK`
 
 !!! warning "Scaling Issues"
-    Due to the exponential costs in the objective, the optimization problem may be poorly-scaled for large classes. This can result in the default GLPK optimizer producing poor results even though it thinks that it has solved the problem. More powerful commercial solvers such as [Gurobi](https://github.com/jump-dev/Gurobi.jl) can handle this much better.
+    Due to the exponential costs in the objective, the optimization problem may be poorly-scaled for large classes. This can result in the default GLPK optimizer producing poor results even though it thinks that it has solved the problem. More powerful commercial solvers such as [Gurobi](https://github.com/jump-dev/Gurobi.jl) (used with keyword argument `optimizer=Gurobi.Optimizer`) can handle this much better.
 """
 function match(;students, projects,
                 output=nothing,
