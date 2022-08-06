@@ -7,7 +7,7 @@
 ProjectAssigner.jl is a tool for assigning students from a large class (e.g. Senior Design) to projects based on their preferences, skills, and small friend groups.
 It can be used via [Julia](https://julialang.org/) or Python through [pyjulia](https://github.com/JuliaPy/pyjulia).
 
-Please see the documentation by clicking on the blue docs badge above for instructions and usage.
+Please see the documentation by clicking on [this link](https://img.shields.io/badge/docs-dev-blue.svg)](https://zsunberg.github.io/ProjectAssigner.jl/dev) or the blue docs badge above for instructions and usage.
 
 More details about the approach can be found in our [ASEE conference paper](https://peer.asee.org/37187).
 
