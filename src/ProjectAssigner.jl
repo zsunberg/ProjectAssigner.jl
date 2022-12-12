@@ -2,7 +2,7 @@ module ProjectAssigner
 
 using CSV
 using DataFrames
-using GLPK
+using HiGHS
 using JuMP
 
 mutable struct Group
@@ -75,15 +75,15 @@ julia> ProjectAssigner.match(students="students.csv", projects="projects.csv")
 - `projects`: A `DataFrame` or csv filename `String` specifying information about the projects. See the Data Format section of the documentation for more information.
 - `output::String`: optional name for a csv file that the assignments will be written to.
 - `force`: optional vector of student-project pairs to force matches for, e.g. `force=["Bob"=>"Airplane"]` will force student Bob to be assigned to the Airplane project.
-- `optimizer::Function`: optimizer factory to use for the optimization, e.g. `optimizer=Gurobi.Optimizer` will use Gurobi instead of the default `GLPK`
+- `optimizer::Function`: optimizer factory to use for the optimization, e.g. `optimizer=Gurobi.Optimizer` will use Gurobi instead of the default `HiGHS`
 
 !!! warning "Scaling Issues"
-    Due to the exponential costs in the objective, the optimization problem may be poorly-scaled for large classes. This can result in the default GLPK optimizer producing poor results even though it thinks that it has solved the problem. More powerful commercial solvers such as [Gurobi](https://github.com/jump-dev/Gurobi.jl) (used with keyword argument `optimizer=Gurobi.Optimizer`) can handle this much better.
+    Due to the exponential costs in the objective, the optimization problem may be poorly-scaled for large classes. This can result in the default HiGHS optimizer producing poor results even though it thinks that it has solved the problem. More powerful commercial solvers such as [Gurobi](https://github.com/jump-dev/Gurobi.jl) (used with keyword argument `optimizer=Gurobi.Optimizer`) can handle this much better.
 """
 function match(;students, projects,
                 output=nothing,
                 force::AbstractVector{Pair{String,String}}=Pair{String,String}[],
-                optimizer=GLPK.Optimizer
+                optimizer=HiGHS.Optimizer
     )
 
     students = as_dataframe(students)
@@ -123,11 +123,11 @@ function match(;students, projects,
     return out
 end
 
-function match_groups(groups, projects; force=[], optimizer=GLPK.Optimizer)
+function match_groups(groups, projects; force=[], optimizer=HiGHS.Optimizer)
     m = IndexModel(groups, projects, force=force)
 
-    if (maximum(m.c) + minimum(m.c)) == maximum(m.c) && optimizer == GLPK.Optimizer
-        @error("""This problem is too large for GLPK.
+    if (maximum(m.c) + minimum(m.c)) == maximum(m.c) && optimizer == HiGHS.Optimizer
+        @warn("""This problem may be too large for HiGHS.
 
                The cost coefficients have too large a range, and the solution will likely be suboptimal.
 
