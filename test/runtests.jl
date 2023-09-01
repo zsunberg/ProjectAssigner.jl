@@ -25,6 +25,22 @@ using DataFrames
         @test d["Charlie"] == "Airplane"
     end
 
+    @testset "Equally-Ranked Projects" begin
+        m = match(students="students_multiple.csv", projects="projects.csv", output="out.csv")
+
+        d = Dict(r[:name]=>r[:project] for r in Tables.rows(m))
+        @test d["Alice"] == "Airplane"
+        @test d["Bob"] == "Airplane"
+        @test d["Charlie"] == "Cubesat"
+        @test d["Dale"] == "Cubesat"
+
+        pd = Dict(r[:name]=>r[:preference] for r in Tables.rows(m))
+        @test pd["Alice"] == 2
+        @test pd["Bob"] == 2
+        @test pd["Charlie"] == 1
+        @test pd["Dale"] == 1
+    end
+
     @testset "Errors" begin
         students = DataFrame()
         @test_throws ArgumentError m = match(students=students, projects="projects.csv")
