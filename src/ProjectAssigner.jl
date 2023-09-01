@@ -281,13 +281,13 @@ function calculate_costs(groups, pinds)
     for (i, g) in enumerate(groups)
         # fill in preferenced
         for (p, r) in g.preferences
-            c[i, pinds[p]] = 2.0^(logn*(r-div(m,2)))*length(g.members)
+            c[i, pinds[p]] = 2.0^(logn*r)*length(g.members)
         end
 
         # fill in unpreferenced
         if length(g.preferences) < length(pinds)
             r = maximum(values(g.preferences))+1
-            missing_cost = 2.0^(logn*(r-div(m,2)))*length(g.members)
+            missing_cost = 2.0^(logn*r)*length(g.members)
             row = view(c, i, :)
             row[isnan.(row)] .= missing_cost
         end
