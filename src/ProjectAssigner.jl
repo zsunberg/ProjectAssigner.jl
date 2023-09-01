@@ -8,7 +8,7 @@ using JuMP
 mutable struct Group
     members::Set{String}
     skills::Dict{String,Float64}
-    preferences::Vector{String}
+    preferences::Dict{String,Int}
 end
 
 struct IndexModel
@@ -95,14 +95,14 @@ function match(;students, projects,
 
     groups = group(students)
 
-    @debug(groups)
+    @debug("Groups:", groups)
 
     assignments = match_groups(groups, projects, force=force, optimizer=optimizer)
 
     out = DataFrame(name=String[], project=String[], preference=Union{Int,Missing}[])
     for (i, g) in enumerate(groups)
         project = assignments[i]
-        pref = something(findfirst(==(project), g.preferences), missing)
+        pref = get(g.preferences, project, missing)
         for name in g.members
             push!(out, (name=name, project=assignments[i], preference=pref))
         end
@@ -190,7 +190,7 @@ function group(students::DataFrame)
                 end
             end
             if valid
-                g = Group(candidate_group, Dict(skill=>0.0 for skill in skills), [])
+                g = Group(candidate_group, Dict(skill=>0.0 for skill in skills), Dict())
                 push!(groups, g)
                 for s in candidate_group
                     groupmap[s] = length(groups)
@@ -202,7 +202,7 @@ function group(students::DataFrame)
                 @warn("""
                       Invalid teammate request for $k
                       """, Dict(s=>collect(partners[s]) for s in candidate_group))
-                g = Group(Set((k,)), Dict(skill=>0.0 for skill in skills), [])
+                g = Group(Set((k,)), Dict(skill=>0.0 for skill in skills), Dict())
                 push!(groups, g)
                 groupmap[k] = length(groups)
             end
@@ -215,13 +215,21 @@ function group(students::DataFrame)
         for skill in skills
             g.skills[skill] += row["skill:"*skill]
         end
-        prefs = sort(filter(p->!ismissing(row[p]),project_names), by=p->row[p])
-        if !isempty(g.preferences) && prefs != g.preferences
-            @warn("Preferences for $(collect(g.members)) don't match.", prefs, g.preferences)
+
+        ranked_projects = filter(p->!ismissing(row[p]), project_names)
+        prefs = Dict(p => row[p] for p in ranked_projects)
+        if any(g.preferences[p] != prefs[p] for p in keys(g.preferences))
+            @warn("$(row["name"]) has conflicting preferences.", prefs, g.preferences)
         end
-        if length(prefs) > length(g.preferences)
-            g.preferences = prefs
-        end
+        merge!(g.preferences, prefs)
+        
+        # prefs = sort(filter(p->!ismissing(row[p]),project_names), by=p->row[p])
+        # if !isempty(g.preferences) && prefs != g.preferences
+        #     @warn("Preferences for $(collect(g.members)) don't match.", prefs, g.preferences)
+        # end
+        # if length(prefs) > length(g.preferences)
+        #     g.preferences = prefs
+        # end
     end
 
     return groups
@@ -272,7 +280,7 @@ function calculate_costs(groups, pinds)
 
     for (i, g) in enumerate(groups)
         # fill in preferenced
-        for (r, p) in enumerate(g.preferences)
+        for (p, r) in g.preferences
             c[i, pinds[p]] = 2.0^(logn*(r-div(m,2)))*length(g.members)
         end
 
