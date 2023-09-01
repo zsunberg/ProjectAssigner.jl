@@ -276,7 +276,7 @@ function calculate_costs(groups, pinds)
     logn = ceil(Int, log2(n))
 
     # c[i, j] is the cost of connecting group i to project j
-    c = zeros(length(groups), m)
+    c = fill(NaN, length(groups), m)
 
     for (i, g) in enumerate(groups)
         # fill in preferenced
@@ -286,10 +286,10 @@ function calculate_costs(groups, pinds)
 
         # fill in unpreferenced
         if length(g.preferences) < length(pinds)
-            r = length(g.preferences)+1
+            r = maximum(values(g.preferences))+1
             missing_cost = 2.0^(logn*(r-div(m,2)))*length(g.members)
             row = view(c, i, :)
-            row[row.==0.0] .= missing_cost
+            row[isnan.(row)] .= missing_cost
         end
     end
 
